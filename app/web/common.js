@@ -12,6 +12,6 @@ function toast(message, bad=false) {
   const el = $('#toast'); el.textContent = message; el.className = bad ? 'toast bad show' : 'toast show';
   clearTimeout(window.toastTimer); window.toastTimer = setTimeout(() => el.classList.remove('show'), 5000);
 }
-const bytes = (n) => { const units=['B','KB','MB','GB','TB']; let i=0; while(n>=1024 && i<4){n/=1024;i++;} return n.toFixed(i?1:0)+' '+units[i]; };
+const bytes = (n) => { const units=['B','KiB','MiB','GiB','TiB']; let i=0; while(n>=1024 && i<4){n/=1024;i++;} return n.toFixed(i?1:0)+' '+units[i]; };
 const guard = (fn) => async (...args) => {try {return await fn(...args);} catch(error){toast(error.message,true);}};
 function empty(title, description) {return `<div class="empty"><div class="empty-icon">◇</div><h3>${esc(title)}</h3><p>${esc(description)}</p></div>`;}

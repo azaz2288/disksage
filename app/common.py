@@ -25,6 +25,8 @@ def prepare(app: FastAPI, root: Path):
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "same-origin"
         response.headers["Content-Security-Policy"] = "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'"
+        if not request.url.path.startswith('/api/'):
+            response.headers['Cache-Control']='no-cache'
         return response
     return app
 
