@@ -1,6 +1,6 @@
 """Disk-backed file inventory: every discovered regular file, queryable in pages."""
 from pathlib import Path
-from contextlib import contextmanager
+from contextlib import contextmanager,closing
 import csv,io,json,sqlite3
 
 class Inventory:
@@ -40,21 +40,36 @@ def connect(path):
 def summary(path):
     with connect(path) as db:
         row=db.execute("SELECT value FROM metadata WHERE key='summary'").fetchone()
-        return json.loads(row[0]) if row else None
+        value=json.loads(row[0]) if row else None
+    if value and Path(value['root']).parent==Path(value['root']):
+        changed=False
+        for directory in value['directories']:
+            if directory['path']==value['root'] and directory['size']!=value['bytes']:
+                directory['size']=value['bytes'];changed=True
+        if changed:
+            # Repair old volume-root snapshots without reading or changing any scanned file.
+            with closing(sqlite3.connect(path)) as db:
+                db.execute('UPDATE directories SET size=? WHERE path=?',(value['bytes'],value['root']))
+                db.execute("UPDATE metadata SET value=? WHERE key='summary'",(json.dumps(value,ensure_ascii=False),))
+                db.commit()
+    return value
 
 def browse(path,selected,query='',offset=0,limit=100,recursive=False,sort='size'):
     with connect(path) as db:
         directory=db.execute('SELECT * FROM directories WHERE path=?',(selected,)).fetchone()
         if not directory:raise KeyError(selected)
-        file_where='instr(lower(path),lower(?))>0' if recursive else 'parent=? AND instr(lower(name),lower(?))>0'
-        args=[query] if recursive else [selected,query]
+        file_where=('instr(lower(path),lower(?))>0' if query else '1') if recursive else 'parent=? AND instr(lower(name),lower(?))>0'
+        args=([query] if query else []) if recursive else [selected,query]
         directories=[] if recursive else [dict(r)|{'kind':'directory','allocated':None} for r in db.execute('SELECT path,parent,name,size FROM directories WHERE parent=? AND path!=? AND instr(lower(name),lower(?))>0',(selected,selected,query))]
         total=db.execute('SELECT count(*) FROM files WHERE '+file_where,args).fetchone()[0]+len(directories)
         order={'size':'size DESC,path','allocated':'coalesce(allocated,-1) DESC,path','name':'name COLLATE NOCASE,path','modified':'modified DESC,path'}[sort]
         # SQL union makes directories and files share one stable paginated ordering.
         if not recursive:
             rows=db.execute('SELECT path,name,size,allocated,extension,modified,kind FROM (SELECT path,name,size,allocated,extension,modified,\'file\' kind FROM files WHERE '+file_where+' UNION ALL SELECT path,name,size,NULL allocated,\'\' extension,NULL modified,\'directory\' kind FROM directories WHERE parent=? AND path!=? AND instr(lower(name),lower(?))>0) ORDER BY '+order+' LIMIT ? OFFSET ?',args+[selected,selected,query,limit,offset])
-        else:rows=db.execute("SELECT path,name,size,allocated,extension,modified,'file' kind FROM files WHERE "+file_where+' ORDER BY '+order+' LIMIT ? OFFSET ?',args+[limit,offset])
+        else:
+            # SQLite's size index includes rowid; reversing both avoids a huge tie-sort on zero-byte files.
+            if sort=='size':order='size DESC,rowid DESC'
+            rows=db.execute("SELECT path,name,size,allocated,extension,modified,'file' kind FROM files WHERE "+file_where+' ORDER BY '+order+' LIMIT ? OFFSET ?',args+[limit,offset])
         return {'items':[dict(r) for r in rows],'total':total,'offset':offset,'limit':limit,'has_more':offset+limit<total,'size':directory['size']}
 
 def export_csv(path):

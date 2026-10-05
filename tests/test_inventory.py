@@ -3,7 +3,7 @@ import csv,io,os,tempfile,time,threading,unittest
 from unittest.mock import patch
 from fastapi.testclient import TestClient
 from app.main import create_app
-from app.engine import scan
+from app.engine import scan,directory_totals
 from app.snapshot import connect,browse
 
 class InventoryTests(unittest.TestCase):
@@ -60,5 +60,16 @@ class InventoryTests(unittest.TestCase):
         with patch('app.main.generate',return_value='分析建议') as provider:
             response=self.client.post(f'/api/scans/{ident}/advice',json={'include_paths':True,'question':'检查缓存'})
             self.assertEqual(response.status_code,200);self.assertIn('application-cache',provider.call_args.args[1])
+    def test_volume_root_is_not_its_own_child(self):
+        root=Path(self.root.anchor);child=root/'nested';grandchild=child/'deeper'
+        totals=directory_totals({root:5,child:10,grandchild:20})
+        self.assertEqual(totals[root],35);self.assertEqual(totals[child],30)
+    def test_previous_volume_root_snapshot_is_repaired_on_restart(self):
+        import json,sqlite3
+        from app.snapshot import Inventory,summary
+        path=self.root/'legacy.db';volume=Path(self.root.anchor);inventory=Inventory(path)
+        inventory.finish({'root':str(volume),'bytes':10,'directories':[{'path':str(volume),'size':20}]},{volume:20})
+        restored=summary(path);self.assertEqual(restored['directories'][0]['size'],10)
+        with connect(path) as db:self.assertEqual(db.execute('SELECT size FROM directories').fetchone()[0],10)
 
 if __name__=='__main__':unittest.main()

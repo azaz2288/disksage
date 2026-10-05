@@ -11,6 +11,12 @@ from .snapshot import Inventory,connect
 
 DAY = 86400
 
+def directory_totals(direct):
+    sizes=dict(direct)
+    for path in sorted(sizes,key=lambda p:len(p.parts),reverse=True):
+        if path.parent!=path and path.parent in sizes:sizes[path.parent]+=sizes[path]
+    return sizes
+
 
 def reparse(info):
     return stat.S_ISLNK(info.st_mode) or bool((getattr(info, "st_file_attributes", 0) or 0) & 0x400)
@@ -138,9 +144,7 @@ def _scan(root: Path, temp_roots, cancel, progress, max_files=None, max_dirs=Non
             if inventory:inventory.error(path,error)
         progress({"files": file_count, "bytes": total, "errors": errors, "current": str(path)})
     # Recompute bottom-up from direct sizes, also valid for cancelled scans.
-    sizes=dict(direct)
-    for path in sorted(sizes,key=lambda p:len(p.parts),reverse=True):
-        if path.parent in sizes:sizes[path.parent]+=sizes[path]
+    sizes=directory_totals(direct)
     result={"root": str(root), "bytes": total, "files": file_count, "errors": errors, "skipped": skipped,
             "complete": complete, "directories": [{"path": str(p), "size": n} for p, n in
                                                    sorted(sizes.items(), key=lambda x: x[1], reverse=True)[:100]],
