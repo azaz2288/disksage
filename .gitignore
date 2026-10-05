@@ -7,3 +7,7 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 verification/
+
+dist/
+build/
+*.spec

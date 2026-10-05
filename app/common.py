@@ -75,4 +75,6 @@ def decode_text(raw: bytes):
 
 
 def data_root(name):
-    return Path(os.environ.get("APP_DATA_DIR", str(Path(__file__).parent.parent / "data"))).resolve()
+    import sys
+    default = Path(os.environ.get('LOCALAPPDATA', str(Path.home()))) / name / 'data' if getattr(sys, 'frozen', False) else Path(__file__).parent.parent / 'data'
+    return Path(os.environ.get("APP_DATA_DIR", str(default))).resolve()
