@@ -1,0 +1,2 @@
+# Development rules
+Read docs/DESIGN.md, docs/ROADMAP.md and docs/PROGRESS.md before changes. Implement the first unchecked milestone with a usable vertical feature, test boundary behavior, and update docs. Preserve user data and uncommitted edits. Never commit data/, credentials or uploaded files. Run unittest and compileall before commit; verify same-SHA CI after push. Keep local-only defaults until authentication and deployment hardening are explicitly implemented.
