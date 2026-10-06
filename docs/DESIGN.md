@@ -1,4 +1,6 @@
-# 架构设计 · v0.2
+# 架构设计 · v0.3
+
+comparison.py通过两个mode=ro库存DB和query_only事务执行同path逻辑大小join，SQLite聚合与稳定BINARY path分页，不将全部行加载Python；CSV单cursor流式输出，独占连接允许Starlette串行worker迁移并finallyclose。根/目录边界只做词法检查，不resolve/stat源目录。main仅从已登记finished scan ID获取库存路径，API不能传任意DB；新comparison.js页面提供历史选择/筛选/分页/CSV及覆盖限制说明。事务分别读取两个库，不保证并发修改两份库时跨库原子一致；历史清单应保持不变。
 
 engine.py负责有界只读扫描和内容复核，allocation.py调用Windows GetCompressedFileSizeW或Unix st_blocks。snapshot.py保存完整文件明细、目录与失败原因；main.py维护扫描状态和SQLite文件操作日志；pending/quarantined/restoring/restored/purging/purged可追踪状态。desktop.py提供Tk原生目录选择与本机服务入口。
 

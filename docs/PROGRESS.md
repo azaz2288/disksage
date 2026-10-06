@@ -1,5 +1,13 @@
 # 开发记录
 
+## 2026-10-07 v0.3 历史扫描对比
+
+- 实现同根历史库存只读join、分页/目录/文字/类型筛选、CSV全量导出与新侧栏页面；显示基线/当前逻辑大小、带符号差值、筛选总数与coverage警告。未再观察到不声称真实删除，不做内容diff或源文件读取/清理。
+- 初7新方法8fail/3error为旧API没有入口；最终11新方法/35完整回归Windows34pass/1原权限skip，30组独立字典oracle、CSV参数验证/跨worker流、snapshot哈希保持通过。编译/JS语法/diff检查通过。Linux的Windows权限跳过不据此声称已覆盖，等待同SHA CI。
+- 独立8892临时合成演示132changes（新增1/未再观察1/大小130）/+647B，页面第1页100、第2页32、缺失筛选1条−5B、重载before/after默认排序正确，consoleerrors[]。未打开8765真实清单，不调用模型；只用临时fixture。浏览器发现恢复顺序不按时间，新页面finished_at排序已修复。
+- 50000rows/份合成SQLite基准全部resized，尾页含aggregate0.281546秒、独立tracemallocpeak47786B；非真实磁盘/原生RSS/性能倍数/SLA，不标百万diff或增量扫描完成。
+- 当前代码应用API version0.3.0；原便携包未重建，不宣称旧下载含新功能。完整commit/push/current-SHA CI和本地根维护证据在portfolio维护报告，避免pure-doc commit循环。下一目标可恢复增量扫描，资源配额/真实百万对比测量仍需深化。
+
 ## v0.1 初版验证
 
 - 只读扫描、取消、排行、保守临时候选、隔离/恢复、模型汇总接口与UI实现。

@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from .common import prepare, mount_ui, database, data_root
 from .engine import scan, safe_chain, fingerprint, cleanup_eligible,find_duplicates
 from .llm import generate, provider_status, install_settings
+from .comparison import compare as compare_snapshots, export as export_comparison, ComparisonError, ScopeNotFound
 
 
 class ScanRequest(BaseModel):
@@ -38,7 +39,7 @@ class PurgeRequest(BaseModel):
 def create_app(root=None, temp_roots=None):
     root = Path(root or data_root("disksage"))
     roots = [Path(p).absolute() for p in (temp_roots or [tempfile.gettempdir()])]
-    app = prepare(FastAPI(title="DiskSage", version="0.2.0"), root)
+    app = prepare(FastAPI(title="DiskSage", version="0.3.0"), root)
     install_settings(app)
     lock = threading.RLock()
     jobs = {}
@@ -125,6 +126,50 @@ def create_app(root=None, temp_roots=None):
     def export(ident:str):
         result={k:v for k,v in full_result(ident).items() if not k.startswith('_')}
         return Response(json.dumps(result,ensure_ascii=False,indent=2),media_type='application/json',headers={'Content-Disposition':'attachment; filename="disksage-report.json"'})
+
+    def comparison_paths(baseline, current):
+        with lock:
+            values = []
+            for ident in (baseline, current):
+                if ident not in jobs:
+                    raise HTTPException(404, '历史扫描不存在')
+                if jobs[ident]['state'] not in {'completed', 'partial'}:
+                    raise HTTPException(409, '扫描尚未完成，不能比较')
+                values.append(jobs[ident]['result']['_inventory'])
+            return values
+
+    @app.get('/api/comparisons')
+    def comparison(baseline:str, current:str, path:str=Query('',max_length=4096), q:str=Query('',max_length=200),
+                   kind:str=Query('all',pattern='^(all|added|removed|resized)$'), offset:int=Query(0,ge=0), limit:int=Query(100,ge=1,le=500)):
+        paths = comparison_paths(baseline, current)
+        try:
+            return compare_snapshots(*paths, path, q, kind, offset, limit)
+        except ScopeNotFound as error:
+            raise HTTPException(404, str(error)) from None
+        except ComparisonError as error:
+            raise HTTPException(400, str(error)) from None
+
+    @app.get('/api/comparisons.csv')
+    def comparison_csv(baseline:str, current:str, path:str=Query('',max_length=4096), q:str=Query('',max_length=200),
+                       kind:str=Query('all',pattern='^(all|added|removed|resized)$')):
+        paths = comparison_paths(baseline, current)
+        stream = export_comparison(*paths, path, q, kind)
+        try:
+            first = next(stream)  # Validate before sending HTTP headers, not inside a started stream.
+        except ScopeNotFound as error:
+            stream.close()
+            raise HTTPException(404, str(error)) from None
+        except ComparisonError as error:
+            stream.close()
+            raise HTTPException(400, str(error)) from None
+        def chunks():
+            try:
+                yield first
+                yield from stream
+            finally:
+                stream.close()
+        return StreamingResponse(chunks(), media_type='text/csv; charset=utf-8',
+                                 headers={'Content-Disposition':'attachment; filename="scan-comparison.csv"'})
 
     @app.post('/api/scans/{ident}/duplicates')
     def duplicates(ident:str):

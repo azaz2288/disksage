@@ -16,4 +16,6 @@ jobs:
           cache: pip
       - run: python -m pip install -r requirements.txt
       - run: python -m unittest discover -s tests -v
-      - run: python -m compileall -q app tests
+      - run: python -m compileall -q app tests tools
+      - run: node --check app/web/comparison.js
+      - run: python tools/comparison_benchmark.py --rows 1000
