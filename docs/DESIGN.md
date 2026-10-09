@@ -1,4 +1,8 @@
-# 架构设计 · v0.3
+# 架构设计 · v0.3.1
+
+refresh.py在一个只读基线事务中验证完整全量来源与已登记非链接子目录，仅调用engine扫描选中子树，按路径组件边界流式复制其他旧文件记录（每批1000），重算目录/扩展名/硬链接统计。SQLite新库存关闭后同步，再通过os.link独占发布；取消、选中范围访问失败或IO失败不替换基线/已有输出。API仅使用已登记scan ID，不接受任意DB路径；UI确认范围，重启从库存metadata恢复混合时间说明。coverage_complete=false、candidates=[]，不能串联刷新。
+
+外部记录不stat、不读取、不遍历，因此硬链接跨范围统计也可能混合不同时点；无自动变更检测/全根最新保证/跨文件快照。暂存临时目录在正常返回/异常时清理，进程崩溃可能遗留，尚无续扫和目录fsync；文件系统不支持硬链接发布则失败关闭。路径校验不防本机恶意写者的检查后竞态或保留元数据变化。
 
 comparison.py通过两个mode=ro库存DB和query_only事务执行同path逻辑大小join，SQLite聚合与稳定BINARY path分页，不将全部行加载Python；CSV单cursor流式输出，独占连接允许Starlette串行worker迁移并finallyclose。根/目录边界只做词法检查，不resolve/stat源目录。main仅从已登记finished scan ID获取库存路径，API不能传任意DB；新comparison.js页面提供历史选择/筛选/分页/CSV及覆盖限制说明。事务分别读取两个库，不保证并发修改两份库时跨库原子一致；历史清单应保持不变。
 

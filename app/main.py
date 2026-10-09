@@ -15,6 +15,7 @@ from .common import prepare, mount_ui, database, data_root
 from .engine import scan, safe_chain, fingerprint, cleanup_eligible,find_duplicates
 from .llm import generate, provider_status, install_settings
 from .comparison import compare as compare_snapshots, export as export_comparison, ComparisonError, ScopeNotFound
+from .refresh import refresh as refresh_scope, check_scope
 
 
 class ScanRequest(BaseModel):
@@ -25,6 +26,9 @@ class ScanRequest(BaseModel):
 class AdviceRequest(BaseModel):
     include_paths:bool=False
     question:str=Field('请分析空间占用并给出保守清理建议',max_length=1000)
+
+class RefreshRequest(BaseModel):
+    path: str = Field(min_length=1, max_length=4096)
 
 
 class CleanupRequest(BaseModel):
@@ -39,7 +43,7 @@ class PurgeRequest(BaseModel):
 def create_app(root=None, temp_roots=None):
     root = Path(root or data_root("disksage"))
     roots = [Path(p).absolute() for p in (temp_roots or [tempfile.gettempdir()])]
-    app = prepare(FastAPI(title="DiskSage", version="0.3.0"), root)
+    app = prepare(FastAPI(title="DiskSage", version="0.3.1"), root)
     install_settings(app)
     lock = threading.RLock()
     jobs = {}
@@ -87,6 +91,33 @@ def create_app(root=None, temp_roots=None):
                     jobs[ident].update(state="failed", error=str(error))
         threading.Thread(target=run, daemon=True).start()
         return {"id": ident}
+
+    @app.post('/api/scans/{baseline}/refresh')
+    def scoped_refresh(baseline: str, body: RefreshRequest):
+        with lock:
+            if baseline not in jobs:
+                raise HTTPException(404, '历史扫描不存在')
+            if any(j['state'] == 'running' for j in jobs.values()):
+                raise HTTPException(409, '已有扫描进行中，请等待或取消')
+            old = jobs[baseline].get('result', {})
+            if not old.get('_inventory'):
+                raise HTTPException(400, '基线没有完整库存')
+            selected = Path(body.path)
+            try: check_scope(old['_inventory'], selected)
+            except ValueError as error: raise HTTPException(400, str(error)) from None
+            ident = uuid.uuid4().hex
+            jobs[ident] = {'state': 'running', 'progress': {}, 'cancel': threading.Event()}
+        def update(value):
+            with lock: jobs[ident]['progress'] = value
+        def run():
+            try:
+                value = refresh_scope(old['_inventory'], selected, inventories/(ident+'.db'), roots,
+                                      jobs[ident]['cancel'], update, exclude_paths=[root])
+                with lock: jobs[ident].update(state='completed', result=value)
+            except Exception:
+                with lock: jobs[ident].update(state='failed', error='局部刷新失败或已取消，未发布新清单；基线保持不变')
+        threading.Thread(target=run, daemon=True).start()
+        return {'id': ident}
 
     @app.get("/api/scans/{ident}")
     def status(ident: str):
