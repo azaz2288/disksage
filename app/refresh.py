@@ -10,6 +10,11 @@ from .engine import scan, safe_chain, directory_totals
 from .snapshot import connect
 
 
+def _sync_staging_file(path):
+    with Path(path).open('r+b') as ready:
+        os.fsync(ready.fileno())
+
+
 def validate(db, selected):
     row = db.execute("SELECT value FROM metadata WHERE key='summary'").fetchone()
     value = json.loads(row[0]) if row else None
@@ -92,8 +97,7 @@ def refresh(baseline, selected, target, temp_roots, cancel, progress, exclude_pa
                                (json.dumps({k:v for k,v in value.items() if not k.startswith('_')}, ensure_ascii=False),))
                 output.commit()
             if cancel.is_set(): raise ValueError('刷新已取消，未发布新清单')
-            with staging.open('r+b') as ready:
-                os.fsync(ready.fileno())
+            _sync_staging_file(staging)
             if cancel.is_set(): raise ValueError('刷新已取消，未发布新清单')
             # Exclusive publication also protects against a late competing writer.
             os.link(staging, target)

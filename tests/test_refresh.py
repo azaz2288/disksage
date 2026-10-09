@@ -57,7 +57,8 @@ class RefreshTests(unittest.TestCase):
         real_scandir = os.scandir
         observed = []
         def enumerated(path):
-            if Path(path).is_relative_to(self.files): observed.append(Path(path))
+            if isinstance(path, (str, os.PathLike)) and Path(path).is_relative_to(self.files):
+                observed.append(Path(path))
             return real_scandir(path)
         with patch('app.engine.os.scandir', side_effect=enumerated):
             ident, job = self.refreshed()
@@ -138,11 +139,12 @@ class RefreshTests(unittest.TestCase):
         from app.refresh import refresh
         real_scandir = os.scandir
         def refused(path):
-            if Path(path) == self.scope: raise PermissionError('synthetic selected-tree denial')
+            if isinstance(path, (str, os.PathLike)) and Path(path) == self.scope:
+                raise PermissionError('synthetic selected-tree denial')
             return real_scandir(path)
         for mode in ('read', 'sync'):
             target = self.state / 'scans' / (mode + '.db')
-            fault = patch('app.engine.os.scandir', side_effect=refused) if mode == 'read' else patch('app.refresh.os.fsync', side_effect=OSError('synthetic'))
+            fault = patch('app.engine.os.scandir', side_effect=refused) if mode == 'read' else patch('app.refresh._sync_staging_file', side_effect=OSError('synthetic'))
             with fault:
                 with self.assertRaises((ValueError, OSError)):
                     refresh(self.base, self.scope, target, [], threading.Event(), lambda _: None)
@@ -184,10 +186,13 @@ class RefreshTests(unittest.TestCase):
             refresh(self.base, self.scope, self.state / 'unsafe.db', [], threading.Event(), lambda _: None)
 
     def test_cancel_during_sync_does_not_publish(self):
-        from app.refresh import refresh
+        from app.refresh import refresh, _sync_staging_file
         event = threading.Event()
         target = self.state / 'scans' / 'sync-cancel.db'
-        with patch('app.refresh.os.fsync', side_effect=lambda _: event.set()):
+        def cancel_during_sync(path):
+            event.set()
+            _sync_staging_file(path)
+        with patch('app.refresh._sync_staging_file', side_effect=cancel_during_sync):
             with self.assertRaises(ValueError):
                 refresh(self.base, self.scope, target, [], event, lambda _: None)
         self.assertFalse(target.exists())
