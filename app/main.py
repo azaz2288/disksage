@@ -16,6 +16,7 @@ from .engine import scan, safe_chain, fingerprint, cleanup_eligible,find_duplica
 from .llm import generate, provider_status, install_settings
 from .comparison import compare as compare_snapshots, export as export_comparison, ComparisonError, ScopeNotFound
 from .refresh import refresh as refresh_scope, check_scope
+from .refresh_budget import RefreshCancelled, RefreshTimedOut
 
 
 class ScanRequest(BaseModel):
@@ -29,6 +30,7 @@ class AdviceRequest(BaseModel):
 
 class RefreshRequest(BaseModel):
     path: str = Field(min_length=1, max_length=4096)
+    timeout_seconds: int = Field(300, ge=1, le=3600, strict=True)
 
 
 class CleanupRequest(BaseModel):
@@ -43,7 +45,7 @@ class PurgeRequest(BaseModel):
 def create_app(root=None, temp_roots=None):
     root = Path(root or data_root("disksage"))
     roots = [Path(p).absolute() for p in (temp_roots or [tempfile.gettempdir()])]
-    app = prepare(FastAPI(title="DiskSage", version="0.3.1"), root)
+    app = prepare(FastAPI(title="DiskSage", version="0.3.2"), root)
     install_settings(app)
     lock = threading.RLock()
     jobs = {}
@@ -112,8 +114,11 @@ def create_app(root=None, temp_roots=None):
         def run():
             try:
                 value = refresh_scope(old['_inventory'], selected, inventories/(ident+'.db'), roots,
-                                      jobs[ident]['cancel'], update, exclude_paths=[root])
+                                      jobs[ident]['cancel'], update, exclude_paths=[root], timeout_seconds=body.timeout_seconds)
                 with lock: jobs[ident].update(state='completed', result=value)
+            except (RefreshCancelled, RefreshTimedOut) as error:
+                state = 'cancelled' if isinstance(error, RefreshCancelled) else 'timed_out'
+                with lock: jobs[ident].update(state=state, error='局部刷新已取消' if state == 'cancelled' else '局部刷新超时', baseline_id=baseline)
             except Exception:
                 with lock: jobs[ident].update(state='failed', error='局部刷新失败或已取消，未发布新清单；基线保持不变')
         threading.Thread(target=run, daemon=True).start()

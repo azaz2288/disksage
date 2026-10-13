@@ -1,4 +1,4 @@
-let scanId=null, result=null, timer=null, execute=null;
+let scanId=null, result=null, timer=null, execute=null, refreshBaseline=null;
 $('#directories').innerHTML=empty('先分析一个目录','扫描结束后展示目录占用排行');
 $('#largest').innerHTML=empty('找出空间去向','大文件只展示，不进入自动清理');
 $('#candidates').innerHTML=empty('建议以安全为先','扫描后仅列出符合保守规则的临时文件');
@@ -10,11 +10,11 @@ function render(r){
  $('#preview').disabled=!r.candidates.length;$('#ai').disabled=false;$('#duplicates').disabled=false;$('#export').href='/api/scans/'+scanId+'/export';$('#export').classList.remove('hidden');$('#types').innerHTML=r.extensions.slice(0,12).map(t=>`<div class="row" style="margin:10px 0"><span class="badge">${esc(t.extension)}</span><span class="spacer"></span><span>${bytes(t.bytes)} · ${t.files}项</span></div>`).join('');guard(()=>browse())();
 }
 async function poll(){
- const job=await api('/scans/'+scanId);const p=job.progress;
+ const id=scanId,job=await api('/scans/'+id);if(id!==scanId)return;const p=job.progress;
  $('#status').textContent=job.state==='running'?`正在分析 ${p.files||0} 个文件 · ${bytes(p.bytes||0)} · ${p.current||''}`:job.error||`分析${job.state==='partial'?'部分完成':'完成'} · 无权访问 ${p.errors||0} 项 · 链接已跳过`;
- if(job.state!=='running'){clearInterval(timer);$('#scan').disabled=false;$('#cancel').classList.add('hidden');$('#progress').classList.add('hidden');if(job.result)render(job.result);}
+ if(job.state!=='running'){clearInterval(timer);$('#scan').disabled=false;$('#cancel').classList.add('hidden');$('#progress').classList.add('hidden');if(job.result){refreshBaseline=null;render(job.result);}else if(refreshBaseline){const baseline=refreshBaseline,old=await api('/scans/'+baseline);if(id!==scanId||baseline!==refreshBaseline)return;scanId=baseline;refreshBaseline=null;render(old.result);$('#status').textContent=(job.error||'局部刷新未完成')+' · 未发布新清单，已恢复原基线，可重新预览重试';}}
 }
-$('#scan-form').onsubmit=guard(async e=>{e.preventDefault();$('#scan').disabled=true;$('#answer').textContent='';try{const data=await post('/scans',{path:$('#path').value});scanId=data.id;$('#cancel').classList.remove('hidden');$('#progress').classList.remove('hidden');timer=setInterval(()=>guard(poll)(),700);await poll();}catch(e){$('#scan').disabled=false;throw e;}});
+$('#scan-form').onsubmit=guard(async e=>{e.preventDefault();$('#scan').disabled=true;$('#answer').textContent='';try{const data=await post('/scans',{path:$('#path').value});refreshBaseline=null;scanId=data.id;$('#cancel').classList.remove('hidden');$('#progress').classList.remove('hidden');timer=setInterval(()=>guard(poll)(),700);await poll();}catch(e){$('#scan').disabled=false;throw e;}});
 $('#cancel').onclick=guard(()=>post('/scans/'+scanId+'/cancel',{}));
 function dialog(title,html,action,label){$('#confirm-title').textContent=title;$('#confirm-body').innerHTML=html;$('#execute').textContent=label;execute=action;$('#confirm').showModal();}
 $('#close').onclick=()=>$('#confirm').close();

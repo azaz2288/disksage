@@ -8,6 +8,7 @@ import tempfile
 
 from .engine import scan, safe_chain, directory_totals
 from .snapshot import connect
+from .refresh_budget import RefreshBudget
 
 
 def _sync_staging_file(path):
@@ -40,38 +41,55 @@ def check_scope(baseline, selected):
         return validate(source, selected)
 
 
-def refresh(baseline, selected, target, temp_roots, cancel, progress, exclude_paths=()):
+def refresh(baseline, selected, target, temp_roots, cancel, progress, exclude_paths=(), timeout_seconds=300):
+    budget = RefreshBudget(cancel, timeout_seconds)
+    budget.check()
+    try:
+        return _refresh(baseline, selected, target, temp_roots, budget, progress, exclude_paths)
+    except sqlite3.OperationalError:
+        budget.check()
+        raise
+
+
+def _refresh(baseline, selected, target, temp_roots, cancel, progress, exclude_paths):
     baseline, selected, target = Path(baseline), Path(selected), Path(target)
     if target.exists() or target.is_symlink() or target.absolute() == baseline.absolute():
         raise ValueError('输出已存在，拒绝覆盖')
     # Keep one baseline read transaction across selection, scan and merge.
     with connect(baseline) as source:
+        source.set_progress_handler(cancel.sqlite_progress, 1000)
         source.execute('BEGIN')
         old = validate(source, selected)
+        cancel.check()
         target.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(prefix='.refresh-', dir=target.parent) as workspace:
             staging = Path(workspace) / 'inventory.db'
-            observed = scan(selected, temp_roots, cancel, progress, inventory_path=staging, exclude_paths=exclude_paths)
-            if cancel.is_set() or not observed['coverage_complete']:
+            observed = scan(selected, temp_roots, cancel, progress, inventory_path=staging,
+                            exclude_paths=exclude_paths, inventory_progress=cancel.sqlite_progress)
+            cancel.check()
+            if not observed['coverage_complete']:
                 raise ValueError('局部扫描已取消或覆盖不完整，未发布新清单；基线保留')
             prefix = str(selected) + os.sep
             outside = 'path!=? AND substr(path,1,?)!=?'
             args = (str(selected), len(prefix), prefix)
             reused = source.execute('SELECT count(*) FROM files WHERE ' + outside, args).fetchone()[0]
             with closing(sqlite3.connect(staging)) as output:
+                output.set_progress_handler(cancel.sqlite_progress, 1000)
                 output.row_factory = sqlite3.Row
                 output.execute('BEGIN')
                 # Bounded batches; never touch or stat reused source paths.
                 cursor = source.execute('SELECT * FROM files WHERE ' + outside, args)
                 while rows := cursor.fetchmany(1000):
-                    if cancel.is_set(): raise ValueError('刷新已取消，未发布新清单')
+                    cancel.check()
                     output.executemany('INSERT INTO files VALUES(?,?,?,?,?,?,?,?,?,?)', rows)
                 old_dirs = [Path(r[0]) for r in source.execute('SELECT path FROM directories WHERE ' + outside, args)]
                 new_dirs = [Path(r[0]) for r in output.execute('SELECT path FROM directories')]
                 direct = {p: 0 for p in old_dirs + new_dirs}
                 for row in output.execute('SELECT parent,sum(size) size FROM files GROUP BY parent'):
+                    cancel.check()
                     direct[Path(row['parent'])] = row['size']
-                sizes = directory_totals(direct)
+                sizes = directory_totals(direct, cancel.check)
+                cancel.check()
                 output.execute('DELETE FROM directories')
                 output.executemany('INSERT INTO directories VALUES(?,?,?,?)',
                                    ((str(p), str(p.parent), p.name, size) for p, size in sizes.items()))
@@ -91,14 +109,16 @@ def refresh(baseline, selected, target, temp_roots, cancel, progress, exclude_pa
                          'refresh': {'baseline_id': baseline.stem, 'baseline_finished_at': old['finished_at'],
                                      'path': str(selected), 'scanned_files': observed['files'], 'reused_files': reused,
                                      'observed_at': observed['finished_at'], 'selected_coverage_complete': True,
+                                     'timeout_seconds': cancel.timeout_seconds,
+                                     'elapsed_before_sync_seconds': cancel.elapsed(),
                                      'outside_revalidated': False},
                          'measurement': '局部刷新混合时间清单：仅选中子树重新观察，其余沿用基线；不是全根当前覆盖，无清理候选'}
                 output.execute("UPDATE metadata SET value=? WHERE key='summary'",
                                (json.dumps({k:v for k,v in value.items() if not k.startswith('_')}, ensure_ascii=False),))
                 output.commit()
-            if cancel.is_set(): raise ValueError('刷新已取消，未发布新清单')
+            cancel.check()
             _sync_staging_file(staging)
-            if cancel.is_set(): raise ValueError('刷新已取消，未发布新清单')
+            cancel.check()
             # Exclusive publication also protects against a late competing writer.
             os.link(staging, target)
             return value

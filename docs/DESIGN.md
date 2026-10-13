@@ -1,4 +1,8 @@
-# 架构设计 · v0.3.1
+# 架构设计 · v0.3.2
+
+refresh_budget.py在任务入口严格校验整数1..3600，保存单monotonic deadline；首次cancel/timeout原因锁定。事件facade供engine逐entry检查；source读连接、engine库存连接和merge输出连接安装1000步SQLite VM回调，回调返回1中断，wrapper只在已知budget终态时将OperationalError转换为RefreshCancelled/RefreshTimedOut，其他SQL故障不伪装。目录累加逐项检查，scan/聚合/文件sync后到发布前复验同一预算。SQLite初始化、IO/内建排序/正常temp回收不是可抢占沙箱，os.link之前检查不保证调用期间硬deadline或原子cancel；崩溃仍无恢复。
+
+API新任务分开cancelled/timed_out/failed，不返回异常路径/未完成result；终态仅内存，成功预算/sync前耗时跟summary重启恢复。页面确认时严格验证budget，poll检查scanID丢旧响应；失败恢复此前基线时再次复验当前视图身份，历史切换不被异步恢复覆盖，不自动重试。
 
 refresh.py在一个只读基线事务中验证完整全量来源与已登记非链接子目录，仅调用engine扫描选中子树，按路径组件边界流式复制其他旧文件记录（每批1000），重算目录/扩展名/硬链接统计。SQLite新库存关闭后同步，再通过os.link独占发布；取消、选中范围访问失败或IO失败不替换基线/已有输出。API仅使用已登记scan ID，不接受任意DB路径；UI确认范围，重启从库存metadata恢复混合时间说明。coverage_complete=false、candidates=[]，不能串联刷新。
 

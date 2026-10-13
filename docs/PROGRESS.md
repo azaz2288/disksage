@@ -1,5 +1,13 @@
 # 开发记录
 
+## 2026-10-13 v0.3.2 刷新总时限与SQL取消
+
+- default300/严格1..3600秒，scan/reuse/SQL聚合/sync前后单monotonic预算；三连接VM progress callback中断长计算，取消原因锁定，正常SQL错误原样失败。timeout/cancel不发布，基线哈希与竞争输出保留；不是硬实时/RSS/磁盘沙箱，阻塞IO/排序/回收不可即时抢占，发布调用前检查仍有竞态。elapsed_before_sync_seconds明确非完整耗时。
+- 新11Python方法：invalid预算早拒绝、默认/自定metadata、scan/sync共享期限、真实SQLite聚合和scan库存中断、cancel锁定、普通SQL错误、竞争输出、API422/脱敏分类与实际cancel event；定向11/11 1.866s。旧实现首8方法1failure/15errors含subcases，后fixture SQLite context仅commit未close导致Win cleanup error，改closing不降低断言。最终完整59方法Windows57pass/2权限skip17.737s；Linux权限行为仍由同SHA CI核验。
+- 7Node测试实际shipped browse/refresh/poll函数，预算/确认范围、乱序/history/异步恢复不覆盖及timeout/cancel原基线恢复/不自动重试；7通过111.4848ms。初3error是VM跨上下文promise需setImmediate flush，fixture修复后通过。compileall/pipcheck通过，既有FastAPI httpx弃用提示保留。
+- 独立8900合成基线7B，人工2秒延迟并非磁盘性能：IAB实际1秒超时恢复7B、主动cancel恢复7B、9秒显式重试成功13B/3文件/候选0，mixed freshness/不可串联保留。390x844 body375/dialog351.35/client350=scroll350无横溢出，console error/warn=[]、像素截图核验；未连接真实手机/未打开旧8765服务/真实清单，不执行清理/模型API。
+- 浏览器inventory Edge认证不可用但已选IAB可用，无认证绕过；完整SHA/同SHA双平台CI/18终检在根本日报告。自动变更检测/崩溃续扫/全根新覆盖、硬限额、目录fsync与便携包重建未完成，整里程碑保持unchecked。
+
 ## 2026-10-10 v0.3.1 显式子目录刷新
 
 - 完整全量历史基线中的已登记子目录可从页面确认后只读刷新；只枚举选中子树，外部旧记录分批复制，重算目录/扩展名/硬链接汇总，独占发布新清单。原基线不变，混合时间/外部未复验提示持久保存；不生成清理候选、不允许串联刷新。

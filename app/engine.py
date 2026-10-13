@@ -11,9 +11,10 @@ from .snapshot import Inventory,connect
 
 DAY = 86400
 
-def directory_totals(direct):
+def directory_totals(direct, checkpoint=None):
     sizes=dict(direct)
     for path in sorted(sizes,key=lambda p:len(p.parts),reverse=True):
+        if checkpoint: checkpoint()
         if path.parent!=path and path.parent in sizes:sizes[path.parent]+=sizes[path]
     return sizes
 
@@ -47,9 +48,11 @@ def cleanup_eligible(path, info, roots, now):
     return any(safe_chain(path, root) for root in roots)
 
 
-def scan(root: Path, temp_roots, cancel, progress, max_files=None, max_dirs=None, inventory_path=None, exclude_paths=()):
+def scan(root: Path, temp_roots, cancel, progress, max_files=None, max_dirs=None, inventory_path=None, exclude_paths=(), inventory_progress=None):
     inventory=Inventory(inventory_path) if inventory_path else None
-    try:return _scan(root,temp_roots,cancel,progress,max_files,max_dirs,inventory_path,exclude_paths,inventory)
+    try:
+        if inventory and inventory_progress: inventory.db.set_progress_handler(inventory_progress, 1000)
+        return _scan(root,temp_roots,cancel,progress,max_files,max_dirs,inventory_path,exclude_paths,inventory)
     finally:
         if inventory:inventory.close()
 
