@@ -1,4 +1,8 @@
-# 架构设计 · v0.3.2
+# 架构设计 · v0.3.3
+
+scope_changes.py在选中子树扫描成功后、外部旧行复制前，使用同一基线只读事务，以1000行批次将选中旧文件的path/size/device/inode/fingerprint复制到输出连接TEMP表。SQL按相同path六类互斥：新增观察、未再观察、非零inode且device/inode不同的身份替换、大小变化、其余指纹变化、元数据未变；优先级依次，替换也可能改大小，不重复计数。保存before/after文件数、逻辑字节与净差到refresh.changes，跟成功summary一起发布/重启恢复/JSON导出。两连接继承同一SQLite预算，任何失败均不发布；不是额外长期缓存，无源文件正文读取或外部范围stat。
+
+文件指纹包含device/inode/size/mtime_ns，不是内容哈希；相同大小且保留mtime/身份的内容修改不检测。零inode不判身份替换，inode复用也可能漏检，网络文件系统身份不保证稳定。重命名视作未再观察+新增，未再观察不证明删除；目录变化不计入六类。仅在用户显式刷新时计算，不是自动监控/崩溃续扫。旧summary无changes时UI明确“未记录”，不猜零；textContent显示说明，不执行路径内容。每批1000是Python行保留量，不是SQLite/进程RSS、磁盘或时限硬资源保证。旧v0.3比较页仍只比较逻辑大小，没有偷偷扩大其语义。
 
 refresh_budget.py在任务入口严格校验整数1..3600，保存单monotonic deadline；首次cancel/timeout原因锁定。事件facade供engine逐entry检查；source读连接、engine库存连接和merge输出连接安装1000步SQLite VM回调，回调返回1中断，wrapper只在已知budget终态时将OperationalError转换为RefreshCancelled/RefreshTimedOut，其他SQL故障不伪装。目录累加逐项检查，scan/聚合/文件sync后到发布前复验同一预算。SQLite初始化、IO/内建排序/正常temp回收不是可抢占沙箱，os.link之前检查不保证调用期间硬deadline或原子cancel；崩溃仍无恢复。
 

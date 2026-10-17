@@ -45,7 +45,7 @@ class PurgeRequest(BaseModel):
 def create_app(root=None, temp_roots=None):
     root = Path(root or data_root("disksage"))
     roots = [Path(p).absolute() for p in (temp_roots or [tempfile.gettempdir()])]
-    app = prepare(FastAPI(title="DiskSage", version="0.3.2"), root)
+    app = prepare(FastAPI(title="DiskSage", version="0.3.3"), root)
     install_settings(app)
     lock = threading.RLock()
     jobs = {}

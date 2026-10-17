@@ -9,6 +9,7 @@ import tempfile
 from .engine import scan, safe_chain, directory_totals
 from .snapshot import connect
 from .refresh_budget import RefreshBudget
+from .scope_changes import summarize as summarize_changes
 
 
 def _sync_staging_file(path):
@@ -77,6 +78,7 @@ def _refresh(baseline, selected, target, temp_roots, cancel, progress, exclude_p
                 output.set_progress_handler(cancel.sqlite_progress, 1000)
                 output.row_factory = sqlite3.Row
                 output.execute('BEGIN')
+                changes = summarize_changes(source, output, selected, cancel.check)
                 # Bounded batches; never touch or stat reused source paths.
                 cursor = source.execute('SELECT * FROM files WHERE ' + outside, args)
                 while rows := cursor.fetchmany(1000):
@@ -113,6 +115,7 @@ def _refresh(baseline, selected, target, temp_roots, cancel, progress, exclude_p
                                      'elapsed_before_sync_seconds': cancel.elapsed(),
                                      'outside_revalidated': False},
                          'measurement': '局部刷新混合时间清单：仅选中子树重新观察，其余沿用基线；不是全根当前覆盖，无清理候选'}
+                value['refresh']['changes'] = changes
                 output.execute("UPDATE metadata SET value=? WHERE key='summary'",
                                (json.dumps({k:v for k,v in value.items() if not k.startswith('_')}, ensure_ascii=False),))
                 output.commit()

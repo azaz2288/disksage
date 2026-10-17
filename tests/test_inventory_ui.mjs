@@ -50,6 +50,17 @@ test('active inventory response updates scope and export together', async () => 
 });
 
 const appSource=readFileSync(new URL('../app/web/app.js', import.meta.url),'utf8');
+const changesSource=source.match(/function scopeChangesText\(changes\)\{[\s\S]*?\n\}/)?.[0];
+assert.ok(changesSource);
+test('metadata delta text shows exclusive categories, signed bytes and uncertainty',()=>{
+  const ctx=vm.createContext({bytes:n=>`${n}B`});vm.runInContext(changesSource,ctx);
+  const changes={counts:{added:1,removed:2,replaced:3,resized:4,metadata_changed:5,unchanged:6},before_bytes:12,after_bytes:9,delta_bytes:-3};
+  const text=ctx.scopeChangesText(changes);
+  for(const part of ['新增 1','未再观察到 2','身份替换 3','大小变化 4','仅元数据变化 5','元数据未变 6','12B → 9B（−3B）','不证明内容相同','不证明真实删除','不含目录变化'])assert.ok(text.includes(part),part);
+  assert.match(ctx.scopeChangesText({...changes,delta_bytes:3}),/\+3B/);
+  assert.match(ctx.scopeChangesText({...changes,delta_bytes:0}),/（0B）/);
+  assert.match(ctx.scopeChangesText(undefined),/旧清单未记录/);
+});
 const pollSource=appSource.match(/async function poll\(\)\{[\s\S]*?\n\}/)?.[0];
 const refreshSource=source.slice(source.indexOf('refreshDirectory.onclick='));
 const flush=()=>new Promise(resolve=>setImmediate(resolve));
